@@ -2,7 +2,38 @@
 
 ## Executive Summary
 
-*(To be completed in Task 6)*
+### What Works
+
+| Data Need | Available | Endpoint |
+|-----------|-----------|----------|
+| Tournament names | ✅ | `/scoreboard` → calendar |
+| Tournament dates | ✅ | `/scoreboard` → calendar |
+| Player names | ✅ | `/statistics` |
+| Athlete IDs | ✅ | `/statistics` |
+| Position per tournament | ✅ | `/athletes/{id}/stats` |
+| FedEx points per tournament | ✅ | `/athletes/{id}/stats` |
+| Historical 2026 results | ✅ | `/athletes/{id}/stats` |
+
+### Key Findings
+
+1. **The `/leaderboard` endpoint does not exist** (returns 404). Use `/scoreboard` instead for current event data.
+
+2. **Historical tournament data** is available via player stats endpoint - each player's stats include all 2026 events with position and FedEx points.
+
+3. **Data model is player-centric** - to get tournament results, you fetch each player's stats rather than fetching a tournament leaderboard.
+
+4. **Names are ASCII-normalized** - ESPN removes accents/diacritics from player names.
+
+5. **Course and purse data are NOT available** in these API endpoints.
+
+### Recommended Approach
+
+```
+1. GET /scoreboard → Extract season calendar (tournament names + dates)
+2. GET /statistics → Get player roster with athlete IDs
+3. For each player: GET /athletes/{id}/stats?season=2026 → Get per-tournament results
+4. Aggregate into tournament-centric JSON if needed
+```
 
 ---
 
@@ -396,4 +427,97 @@ Since your scraper needs to match player names across sources:
 
 ## 5. Recommendations
 
-*(To be completed in Task 6)*
+### Spec Adjustments
+
+Based on this analysis, the original CLAUDE.md spec needs these updates:
+
+| Original Spec | Actual |
+|---------------|--------|
+| `/leaderboard` endpoint | Does not exist (404) - use `/scoreboard` |
+| Tournament-centric data model | Player-centric - fetch stats per player |
+| FedEx standings from leaderboard | Use `/statistics` endpoint |
+
+### Recommended Implementation
+
+#### Endpoints to Use
+
+```python
+# 1. Season schedule (tournament names + dates)
+SCHEDULE_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
+# Path: leagues[0].calendar[*] → {id, label, startDate, endDate}
+
+# 2. Player roster with current FedEx standings
+STANDINGS_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/statistics"
+# Path: athlete → {id, displayName, shortName}
+
+# 3. Per-player tournament results (position + FedEx points)
+PLAYER_STATS_URL = "https://site.web.api.espn.com/apis/common/v3/sports/golf/athletes/{athleteId}/stats?season=2026"
+# Path: leaguesStats[0].eventsStats[*] → {name, position.displayValue, cupPoints.displayValue}
+```
+
+#### Data Flow for Your Use Case
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Fetch /scoreboard                                        │
+│    → Extract calendar: tournament names + dates             │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Fetch /statistics                                        │
+│    → Get player list: athleteId + displayName               │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 3. For each player: Fetch /athletes/{id}/stats              │
+│    → Get per-tournament: position + FedEx points            │
+│    (Rate limit: 1-2 sec between requests)                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 4. Aggregate into tournament-centric JSON                   │
+│    → tournament_results/{eventId}.json                      │
+│       { players: [ {name, position, fedex_points}, ... ] }  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Rate Limiting
+
+- ESPN's undocumented APIs have no published rate limits
+- Recommend 1-2 second delay between player stats requests
+- Cache aggressively - player stats for completed tournaments won't change
+
+### Output Schema (Simplified)
+
+Based on your stated needs (tournament name, dates, position, golfer name, FedEx points):
+
+**tournament_schedule.json**
+```json
+[
+  {
+    "event_id": "401811927",
+    "name": "The Sentry",
+    "start_date": "2026-01-08",
+    "end_date": "2026-01-11"
+  }
+]
+```
+
+**tournament_results/{eventId}.json**
+```json
+{
+  "event_id": "401811932",
+  "name": "AT&T Pebble Beach Pro-Am",
+  "results": [
+    {"athlete_id": "10592", "name": "Collin Morikawa", "position": "1", "fedex_points": 700},
+    {"athlete_id": "4410932", "name": "Min Woo Lee", "position": "T2", "fedex_points": 340}
+  ]
+}
+```
+
+### Not Available (Excluded from Scope)
+
+- Course names
+- Purse amounts
+- Real-time "thru" hole data (only available during active rounds)
+- Playoff details beyond position
