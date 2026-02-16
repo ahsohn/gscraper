@@ -348,7 +348,49 @@ This endpoint provides the **FedEx Cup standings** with a complete player list i
 
 ## 4. Player Name Observations
 
-*(To be completed in Task 5)*
+### Available Name Fields
+
+| Field | Location | Format | Example |
+|-------|----------|--------|---------|
+| displayName | `/statistics`, `/scoreboard` | "FirstName LastName" | "Collin Morikawa" |
+| shortName | `/statistics`, `/scoreboard` | "F. LastName" | "C. Morikawa" |
+| fullName | `/scoreboard` competitors | "FirstName LastName" | "Collin Morikawa" |
+
+**Note:** No separate `firstName` / `lastName` fields are provided. Names are only available as complete strings.
+
+### Name Format Observations
+
+1. **ASCII normalized** - ESPN appears to normalize accented characters to ASCII
+   - Sepp Straka (Austrian) appears as "Sepp Straka" not "Sepp Stráka"
+   - No ä, é, ñ, Å or other diacritics observed in sampled data
+
+2. **No suffixes observed** - In the current FedEx standings sample:
+   - No "Jr." or "III" suffixes found
+   - May appear in full roster (Davis Love III, etc.) but not in top standings
+
+3. **Multi-word names** - Handled correctly:
+   - "Min Woo Lee" (three words)
+   - "Hideki Matsuyama" (standard)
+
+4. **shortName format** - Consistent "F. LastName" pattern:
+   - "C. Morikawa"
+   - "M. Lee" (for Min Woo Lee - only uses first initial)
+   - "H. Matsuyama"
+
+### Implications for Name Normalization
+
+Since your scraper needs to match player names across sources:
+
+1. **Use athlete ID as canonical key** - ESPN's `athleteId` is the reliable unique identifier
+2. **Store displayName as-is** - ESPN's displayName is already normalized (no accents)
+3. **No parsing needed** - You don't need to split first/last names for your use case
+4. **shortName useful for display** - "C. Morikawa" format is compact for leaderboards
+
+### Potential Issues
+
+1. **Name variations across sources** - If matching against non-ESPN data, may need fuzzy matching
+2. **Suffixes** - If Jr./III players appear, verify ESPN includes suffix in displayName
+3. **Asian name order** - "Min Woo Lee" follows Western order (given name first)
 
 ---
 
