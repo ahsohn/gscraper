@@ -224,7 +224,125 @@ For the scraper implementation:
 
 ## 3. Player Stats Endpoint
 
-*(To be completed in Task 4)*
+**URL:** `https://site.web.api.espn.com/apis/common/v3/sports/golf/athletes/{athleteId}/stats?season=2026`
+
+### Top-Level JSON Structure
+
+```json
+{
+  "leaguesStats": [
+    {
+      "eventsStats": [...]  // Array of tournament results
+    }
+  ]
+}
+```
+
+### Tournament Result Structure (Per Event)
+
+Path: `leaguesStats[0].eventsStats[*]`
+
+```json
+{
+  "id": "string",           // Event ID
+  "name": "string",         // Tournament name
+  "competitions": [
+    {
+      "competitors": [
+        {
+          "status": {
+            "position": {
+              "displayValue": "string"  // e.g., "1", "T13", "MC"
+            }
+          },
+          "stats": [
+            {
+              "cupPoints": {
+                "displayValue": "string"  // FedEx Cup points earned
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Key Fields Identified
+
+| Target Field | ESPN Path | Notes |
+|--------------|-----------|-------|
+| event_name | `eventsStats[*].name` | Tournament name |
+| position | `eventsStats[*].competitions[0].competitors[0].status.position.displayValue` | "1", "T13", "MC" |
+| fedex_points | `eventsStats[*].competitions[0].competitors[0].stats[*].cupPoints.displayValue` | Points earned |
+| score | Available in nested stats | Total score for tournament |
+
+### Sample Data - Collin Morikawa (ID: 10592)
+
+| Tournament | Position | FedEx Points | Score |
+|------------|----------|--------------|-------|
+| Sony Open in Hawaii | MC | 0 | 140 (E) |
+| WM Phoenix Open | T54 | 6 | 281 (-3) |
+| AT&T Pebble Beach Pro-Am | 1 | 700 | 266 (-22) |
+
+### Sample Data - Hideki Matsuyama (ID: 5860)
+
+| Tournament | Position | FedEx Points | Score |
+|------------|----------|--------------|-------|
+| Sony Open in Hawaii | T13 | 54 | 271 (-9) |
+| Farmers Insurance Open | T11 | 59 | 276 (-12) |
+| WM Phoenix Open | 2 | 300 | 268 (-16) |
+| AT&T Pebble Beach Pro-Am | T8 | 148 | 270 (-18) |
+
+### Important Notes
+
+1. **No athlete name in response** - The stats endpoint does NOT include the player's name. You must already know the athlete ID and name from another source.
+2. **Historical data included** - Returns all 2026 events the player has competed in
+3. **Season parameter** - Use `?season=2026` for current season
+
+---
+
+## 3a. Statistics/Standings Endpoint
+
+**URL:** `https://site.api.espn.com/apis/site/v2/sports/golf/pga/statistics`
+
+### Purpose
+
+This endpoint provides the **FedEx Cup standings** with a complete player list including athlete IDs and names. Use this to get the roster of players to then query individual stats.
+
+### Player Entry Structure
+
+```json
+{
+  "athlete": {
+    "id": "string",           // Athlete ID for stats lookup
+    "displayName": "string",  // Full name
+    "shortName": "string"     // "F. Lastname" format
+  },
+  "stats": [...]              // Current FedEx Cup points
+}
+```
+
+### Sample Data
+
+| Rank | Display Name | Athlete ID | FedEx Points |
+|------|--------------|------------|--------------|
+| 1 | Chris Gotterup | 4690755 | 1066 |
+| 2 | Scottie Scheffler | 9478 | 938 |
+| 3 | Collin Morikawa | 10592 | 706 |
+| 4 | Hideki Matsuyama | 5860 | 560 |
+| 5 | Sepp Straka | 8961 | 419 |
+| 6 | Min Woo Lee | 4410932 | 417 |
+
+### Recommended Data Flow
+
+```
+1. GET /statistics → Get player list with IDs and names
+2. For each player:
+   GET /athletes/{id}/stats?season=2026 → Get per-tournament results
+3. Aggregate into tournament-centric view if needed
+```
 
 ---
 
