@@ -192,6 +192,34 @@ Path: `events[*].competitions[*].competitors[*]`
 | thru | - | NOT AVAILABLE (completed tournament) |
 | today | - | NOT AVAILABLE (completed tournament) |
 
+### Event ID Parameter Testing
+
+**Tested URLs:**
+- `https://site.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard?event=401811927` - **404**
+- `https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?event=401811927` - **Ignored** (returns current event instead)
+- `https://site.api.espn.com/apis/site/v2/sports/golf/pga/summary?event=401811927` - **502**
+- `https://site.api.espn.com/apis/site/v2/sports/golf/pga/events/401811927` - **404**
+
+**Alternative Core API Endpoint:**
+- `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{eventId}/competitions/{eventId}/competitors`
+- Returns paginated list with `$ref` links to detailed data
+- For current event (401811932): 80 competitors, 4 pages, 25 per page
+- Includes `movement` field (position change), `order` (leaderboard position), `amateur` flag
+- Actual scoring data requires following `$ref` links
+
+### Key Findings for Historical Data
+
+1. **The scoreboard endpoint only returns the current/most recent event** - the `?event=` parameter is ignored
+2. **The dedicated `/leaderboard` endpoint does not exist** (404)
+3. **Historical event data** may require the core API (`sports.core.api.espn.com`) which uses `$ref` links
+4. **For completed tournaments**, data may need to be captured and stored during/immediately after the event
+
+### Recommendation
+
+For the scraper implementation:
+- **Current leaderboard:** Use `/scoreboard` endpoint - competitors data is embedded
+- **Historical results:** May require alternate approach (scrape during event, or use core API with `$ref` dereferencing)
+
 ---
 
 ## 3. Player Stats Endpoint
