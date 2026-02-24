@@ -66,3 +66,38 @@ class ESPNClient:
         params = {"season": config.CURRENT_SEASON}
         logger.debug(f"Fetching stats for athlete {athlete_id}...")
         return self._request(url, params=params)
+
+    def get_current_tournament_field(self) -> list[dict[str, Any]]:
+        """Fetch the field (competitors) from the current/most recent tournament.
+
+        Returns:
+            List of player dictionaries with athlete_id, name, and score
+        """
+        logger.info("Fetching current tournament field...")
+        data = self.get_scoreboard()
+
+        players = []
+        events = data.get("events", [])
+
+        if not events:
+            logger.warning("No active events found in scoreboard")
+            return players
+
+        event = events[0]
+        competitions = event.get("competitions", [])
+
+        if not competitions:
+            return players
+
+        competitors = competitions[0].get("competitors", [])
+
+        for competitor in competitors:
+            athlete = competitor.get("athlete", {})
+            players.append({
+                "athlete_id": str(competitor.get("id", "")),
+                "name": athlete.get("displayName", ""),
+                "score": competitor.get("score", ""),
+            })
+
+        logger.info(f"Found {len(players)} players in current tournament")
+        return players

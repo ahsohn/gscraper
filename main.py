@@ -58,6 +58,44 @@ def results(max_players: int) -> None:
     click.echo(f"Created {len(result)} tournament result files")
 
 
+@cli.command()
+@click.argument("input_csv", type=click.Path(exists=True))
+@click.argument("output_csv", type=click.Path())
+def points(input_csv: str, output_csv: str) -> None:
+    """Get FedEx points for players from the most recent tournament.
+
+    Reads player names from INPUT_CSV (first column) and writes results to OUTPUT_CSV.
+
+    Examples:
+        python main.py points players.csv results.csv
+    """
+    from scrapers.player_tournament_points import (
+        get_player_points,
+        read_player_names_from_csv,
+        write_results_to_csv,
+    )
+
+    # Read player names from CSV
+    player_names = read_player_names_from_csv(input_csv)
+    click.echo(f"Read {len(player_names)} player names from {input_csv}")
+
+    if not player_names:
+        click.echo("Error: No player names found in CSV.")
+        return
+
+    client = ESPNClient()
+    results = get_player_points(player_names, client)
+
+    # Write results to CSV
+    write_results_to_csv(results, output_csv)
+    click.echo(f"Wrote results to {output_csv}")
+
+    # Show summary
+    found = sum(1 for r in results if r.get("found"))
+    not_found = len(results) - found
+    click.echo(f"\nSummary: {found} found, {not_found} not found in tournament field")
+
+
 @cli.command(name="all")
 @click.option(
     "--max-players",
