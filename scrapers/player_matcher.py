@@ -1,5 +1,7 @@
 """Player matching utilities for ESPN ID mapping."""
 
+from rapidfuzz import fuzz, process
+
 # Cyrillic to ASCII character mappings
 CYRILLIC_TO_ASCII = {
     '\u0435': 'e',  # Cyrillic е -> e
@@ -30,3 +32,51 @@ def normalize_name(name: str) -> str:
 
     # Strip whitespace
     return result.strip()
+
+
+def find_best_match(
+    golfer_name: str,
+    espn_players: list[dict],
+    threshold: int = 70
+) -> tuple[str | None, str | None, int]:
+    """Find the best matching ESPN player for a golfer name.
+
+    Args:
+        golfer_name: Name to match
+        espn_players: List of ESPN player dicts with 'name' and 'athlete_id'
+        threshold: Minimum score to consider a match (0-100)
+
+    Returns:
+        Tuple of (espn_name, espn_id, confidence_score)
+        Returns (None, None, score) if no match above threshold
+    """
+    if not espn_players:
+        return (None, None, 0)
+
+    normalized_input = normalize_name(golfer_name)
+
+    # Build lookup dict: normalized_name -> player
+    player_lookup = {}
+    choices = []
+    for player in espn_players:
+        norm = normalize_name(player["name"])
+        player_lookup[norm] = player
+        choices.append(norm)
+
+    # Use token_sort_ratio for word order flexibility
+    result = process.extractOne(
+        normalized_input,
+        choices,
+        scorer=fuzz.token_sort_ratio
+    )
+
+    if result is None:
+        return (None, None, 0)
+
+    matched_norm, score, _ = result
+
+    if score < threshold:
+        return (None, None, score)
+
+    player = player_lookup[matched_norm]
+    return (player["name"], player["athlete_id"], score)
