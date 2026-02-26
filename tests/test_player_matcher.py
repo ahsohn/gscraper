@@ -1,7 +1,10 @@
 """Tests for player_matcher module."""
 
+import csv
+from pathlib import Path
+
 import pytest
-from scrapers.player_matcher import normalize_name, find_best_match, match_golfers
+from scrapers.player_matcher import normalize_name, find_best_match, match_golfers, read_golfers_csv, write_mapping_csv
 
 
 class TestNormalizeName:
@@ -111,3 +114,45 @@ class TestMatchGolfers:
         results = match_golfers(golfers, espn_players)
         assert results[0]["current_name"] == "Scottie Scheffler"
         assert "Hidеki" in results[1]["current_name"]  # Preserves original
+
+
+class TestCSVIO:
+    """Tests for CSV reading and writing."""
+
+    def test_read_golfers_csv(self, tmp_path):
+        csv_file = tmp_path / "golfers.csv"
+        csv_file.write_text("golfer_id,name\n1,Scottie Scheffler\n2,Rory McIlroy\n")
+
+        golfers = read_golfers_csv(str(csv_file))
+
+        assert len(golfers) == 2
+        assert golfers[0]["golfer_id"] == 1
+        assert golfers[0]["name"] == "Scottie Scheffler"
+
+    def test_read_golfers_csv_with_extra_columns(self, tmp_path):
+        csv_file = tmp_path / "golfers.csv"
+        csv_file.write_text("golfer_id,name,extra\n1,Scottie Scheffler,ignored\n")
+
+        golfers = read_golfers_csv(str(csv_file))
+
+        assert golfers[0]["golfer_id"] == 1
+        assert golfers[0]["name"] == "Scottie Scheffler"
+
+    def test_write_mapping_csv(self, tmp_path):
+        output_file = tmp_path / "mapping.csv"
+        results = [
+            {
+                "golfer_id": 1,
+                "current_name": "Test Player",
+                "espn_name": "Test Player",
+                "espn_id": "12345",
+                "confidence": 100,
+                "status": "MATCH",
+            }
+        ]
+
+        write_mapping_csv(results, str(output_file))
+
+        content = output_file.read_text()
+        assert "golfer_id,current_name,espn_name,espn_id,confidence,status" in content
+        assert "1,Test Player,Test Player,12345,100,MATCH" in content

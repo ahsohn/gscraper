@@ -1,5 +1,8 @@
 """Player matching utilities for ESPN ID mapping."""
 
+import csv
+from pathlib import Path
+
 from rapidfuzz import fuzz, process
 
 # Cyrillic to ASCII character mappings
@@ -123,3 +126,40 @@ def match_golfers(
         })
 
     return results
+
+
+def read_golfers_csv(filepath: str) -> list[dict]:
+    """Read golfers from a CSV file.
+
+    Expected columns: golfer_id, name (additional columns ignored)
+
+    Args:
+        filepath: Path to CSV file
+
+    Returns:
+        List of golfer dicts with golfer_id (int) and name (str)
+    """
+    golfers = []
+    with open(filepath, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            golfers.append({
+                "golfer_id": int(row["golfer_id"]),
+                "name": row["name"],
+            })
+    return golfers
+
+
+def write_mapping_csv(results: list[dict], filepath: str) -> None:
+    """Write matching results to a CSV file.
+
+    Args:
+        results: List of match result dicts
+        filepath: Output path
+    """
+    fieldnames = ["golfer_id", "current_name", "espn_name", "espn_id", "confidence", "status"]
+
+    with open(filepath, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(results)
