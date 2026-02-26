@@ -13,6 +13,7 @@ from scrapers.player_matcher import (
     match_golfers,
     read_golfers_csv,
     write_mapping_csv,
+    generate_sql_updates,
 )
 
 # Configure logging
@@ -165,6 +166,54 @@ def match_golfers_cmd(input_csv: str, output: str) -> None:
     reviews = sum(1 for r in results if r["status"] == "REVIEW")
     no_match = sum(1 for r in results if r["status"] == "NO_MATCH")
     click.echo(f"\nSummary: {matches} MATCH, {reviews} REVIEW, {no_match} NO_MATCH")
+
+
+@cli.command("generate-sql")
+@click.argument("mapping_csv", type=click.Path(exists=True))
+@click.option(
+    "--output",
+    default="output/update_golfers.sql",
+    help="Output SQL file path",
+)
+def generate_sql_cmd(mapping_csv: str, output: str) -> None:
+    """Generate SQL UPDATE statements from a mapping CSV.
+
+    Reads the reviewed mapping CSV and generates SQL statements
+    to update the golfers table with ESPN IDs and name fixes.
+
+    Examples:
+        python main.py generate-sql golfer_mapping.csv
+        python main.py generate-sql mapping.csv --output updates.sql
+    """
+    import csv
+
+    # Read mapping CSV
+    results = []
+    with open(mapping_csv, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            results.append({
+                "golfer_id": int(row["golfer_id"]),
+                "current_name": row["current_name"],
+                "espn_name": row["espn_name"],
+                "espn_id": row["espn_id"],
+                "confidence": int(float(row["confidence"])),
+                "status": row["status"],
+            })
+
+    click.echo(f"Read {len(results)} rows from {mapping_csv}")
+
+    # Generate SQL
+    sql = generate_sql_updates(results)
+
+    # Write output
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(sql)
+
+    # Count updates
+    update_count = sql.count("UPDATE golfers")
+    click.echo(f"Generated {update_count} UPDATE statements")
+    click.echo(f"Wrote SQL to {output}")
 
 
 if __name__ == "__main__":
