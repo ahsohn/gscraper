@@ -17,6 +17,7 @@ from scrapers.player_matcher import (
     load_players_from_tournament_results,
     load_all_espn_players,
     lookup_golfer_espn,
+    search_golfer_espn,
 )
 
 
@@ -481,3 +482,221 @@ class TestMatchGolfersEnhanced:
 
         mock_load.assert_called_once()
         assert results[0]["espn_id"] == "9478"
+
+
+class TestSearchGolferEspn:
+    """Tests for ESPN search API lookup."""
+
+    def test_search_returns_golf_player(self):
+        """Returns golfer info from search results."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = {
+            "results": [
+                {
+                    "type": "player",
+                    "contents": [
+                        {
+                            "id": "b967ea91-1234",
+                            "uid": "s:1100~a:462",
+                            "displayName": "Tiger Woods",
+                            "link": {"web": "https://www.espn.com/golf/player/_/id/462/tiger-woods"}
+                        }
+                    ]
+                }
+            ]
+        }
+
+        name, espn_id = search_golfer_espn("Tiger Woods", mock_client)
+
+        assert name == "Tiger Woods"
+        assert espn_id == "462"
+        mock_client.search_player.assert_called_once_with("Tiger Woods")
+
+    def test_search_ignores_non_golf_players(self):
+        """Ignores players from other sports."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = {
+            "results": [
+                {
+                    "type": "player",
+                    "contents": [
+                        {
+                            "uid": "s:20~a:12345",  # NFL sport ID
+                            "displayName": "Tiger Woods",
+                        }
+                    ]
+                }
+            ]
+        }
+
+        name, espn_id = search_golfer_espn("Tiger Woods", mock_client)
+
+        assert name is None
+        assert espn_id is None
+
+    def test_search_returns_first_golf_match(self):
+        """Returns first golf player when multiple results."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = {
+            "results": [
+                {
+                    "type": "player",
+                    "contents": [
+                        {
+                            "uid": "s:1100~a:111",
+                            "displayName": "Player One",
+                        },
+                        {
+                            "uid": "s:1100~a:222",
+                            "displayName": "Player Two",
+                        }
+                    ]
+                }
+            ]
+        }
+
+        name, espn_id = search_golfer_espn("Player", mock_client)
+
+        assert name == "Player One"
+        assert espn_id == "111"
+
+    def test_search_no_results(self):
+        """Returns None when no results."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = {"results": []}
+
+        name, espn_id = search_golfer_espn("Unknown Player", mock_client)
+
+        assert name is None
+        assert espn_id is None
+
+    def test_search_api_returns_none(self):
+        """Handles None response from API."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = None
+
+        name, espn_id = search_golfer_espn("Test Player", mock_client)
+
+        assert name is None
+        assert espn_id is None
+
+    def test_search_handles_exception(self):
+        """Returns None when API call fails."""
+        mock_client = MagicMock()
+        mock_client.search_player.side_effect = Exception("Network error")
+
+        name, espn_id = search_golfer_espn("Test Player", mock_client)
+
+        assert name is None
+        assert espn_id is None
+
+    def test_search_ignores_non_player_results(self):
+        """Ignores non-player result types."""
+        mock_client = MagicMock()
+        mock_client.search_player.return_value = {
+            "results": [
+                {
+                    "type": "team",
+                    "contents": [{"displayName": "Some Team"}]
+                },
+                {
+                    "type": "player",
+                    "contents": [
+                        {
+                            "uid": "s:1100~a:999",
+                            "displayName": "Actual Player",
+                        }
+                    ]
+                }
+            ]
+        }
+
+        name, espn_id = search_golfer_espn("Player", mock_client)
+
+        assert name == "Actual Player"
+        assert espn_id == "999"
+
+
+class TestLookupGolferEspnWithFallback:
+    """Tests for lookup with search API fallback."""
+
+    def test_lookup_uses_tournament_first(self):
+        """Returns match from tournament field when available."""
+        mock_client = MagicMock()
+        mock_client.get_scoreboard.return_value = {
+            "events": [{
+                "competitions": [{
+                    "competitors": [
+                        {"id": "9478", "athlete": {"displayName": "Scottie Scheffler"}},
+                    ]
+                }]
+            }]
+        }
+
+        name, espn_id, confidence = lookup_golfer_espn("Scottie Scheffler", mock_client)
+
+        assert name == "Scottie Scheffler"
+        assert espn_id == "9478"
+        assert confidence == 100
+        # Should not call search since tournament field matched
+        mock_client.search_player.assert_not_called()
+
+    def test_lookup_falls_back_to_search(self):
+        """Falls back to search API when not in tournament field."""
+        mock_client = MagicMock()
+        mock_client.get_scoreboard.return_value = {
+            "events": [{
+                "competitions": [{
+                    "competitors": [
+                        {"id": "9478", "athlete": {"displayName": "Scottie Scheffler"}},
+                    ]
+                }]
+            }]
+        }
+        mock_client.search_player.return_value = {
+            "results": [{
+                "type": "player",
+                "contents": [{
+                    "uid": "s:1100~a:462",
+                    "displayName": "Tiger Woods",
+                }]
+            }]
+        }
+
+        name, espn_id, confidence = lookup_golfer_espn("Tiger Woods", mock_client)
+
+        assert name == "Tiger Woods"
+        assert espn_id == "462"
+        assert confidence == 100  # Search API gives high confidence
+        mock_client.search_player.assert_called_once_with("Tiger Woods")
+
+    def test_lookup_returns_none_when_both_fail(self):
+        """Returns None when both tournament and search fail."""
+        mock_client = MagicMock()
+        mock_client.get_scoreboard.return_value = {"events": []}
+        mock_client.search_player.return_value = {"results": []}
+
+        name, espn_id, confidence = lookup_golfer_espn("Unknown Player", mock_client)
+
+        assert name is None
+        assert espn_id is None
+        assert confidence == 0
+
+    def test_lookup_continues_to_search_on_scoreboard_error(self):
+        """Falls back to search when scoreboard request fails."""
+        mock_client = MagicMock()
+        mock_client.get_scoreboard.side_effect = Exception("Network error")
+        mock_client.search_player.return_value = {
+            "results": [{
+                "type": "player",
+                "contents": [{
+                    "uid": "s:1100~a:462",
+                    "displayName": "Tiger Woods",
+                }]
+            }]
+        }
+
+        name, espn_id, confidence = lookup_golfer_espn("Tiger Woods", mock_client)
+
+        assert name == "Tiger Woods"
+        assert espn_id == "462"

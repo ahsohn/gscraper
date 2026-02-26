@@ -279,8 +279,67 @@ def load_all_espn_players() -> list[dict]:
     return list(players.values())
 
 
+def search_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str | None]:
+    """Search ESPN for a golfer by name.
+
+    Uses ESPN's search API to find any golfer, not just those in current tournaments.
+
+    Args:
+        golfer_name: Name to search for
+        client: Optional ESPNClient
+
+    Returns:
+        Tuple of (espn_name, espn_id) or (None, None) if not found
+    """
+    if client is None:
+        from espn_client import ESPNClient
+        client = ESPNClient()
+
+    try:
+        data = client.search_player(golfer_name)
+        if not data:
+            return (None, None)
+
+        results = data.get("results", [])
+
+        # Look for golf players in search results
+        for result in results:
+            # Check if this is a player result
+            if result.get("type") != "player":
+                continue
+
+            contents = result.get("contents", [])
+            for player in contents:
+                # Extract the uid field: "s:1100~a:462" -> extract athlete_id "462"
+                uid = player.get("uid", "")
+
+                # uid format: "s:{sport_id}~a:{athlete_id}"
+                # Golf sport ID is 1100
+                if "~a:" not in uid:
+                    continue
+
+                # Check if this is a golf player (sport ID 1100)
+                if not uid.startswith("s:1100~"):
+                    continue
+
+                # Extract athlete_id from uid
+                athlete_id = uid.split("~a:")[-1]
+                display_name = player.get("displayName", "")
+
+                if athlete_id and display_name:
+                    return (display_name, athlete_id)
+
+        return (None, None)
+
+    except Exception:
+        return (None, None)
+
+
 def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str | None, int]:
-    """Look up a golfer in ESPN's current tournament field.
+    """Look up a golfer in ESPN's current tournament field, with search API fallback.
+
+    First tries to find the golfer in the current tournament field. If not found,
+    falls back to ESPN's search API which can find any golfer.
 
     Args:
         golfer_name: Name to search for
@@ -293,30 +352,43 @@ def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str |
         from espn_client import ESPNClient
         client = ESPNClient()
 
+    # First, try current tournament field
     try:
         scoreboard = client.get_scoreboard()
         events = scoreboard.get("events", [])
-        if not events:
-            return (None, None, 0)
 
-        # Build field from current tournament
-        field = []
-        current_event = events[0]
-        competitions = current_event.get("competitions", [])
-        if competitions:
-            competitors = competitions[0].get("competitors", [])
-            for competitor in competitors:
-                athlete = competitor.get("athlete", {})
-                field.append({
-                    "athlete_id": str(competitor.get("id", "")),
-                    "name": athlete.get("displayName", ""),
-                })
+        if events:
+            # Build field from current tournament
+            field = []
+            current_event = events[0]
+            competitions = current_event.get("competitions", [])
+            if competitions:
+                competitors = competitions[0].get("competitors", [])
+                for competitor in competitors:
+                    athlete = competitor.get("athlete", {})
+                    field.append({
+                        "athlete_id": str(competitor.get("id", "")),
+                        "name": athlete.get("displayName", ""),
+                    })
 
-        # Use existing fuzzy match
-        return find_best_match(golfer_name, field)
+            # Use existing fuzzy match
+            name, espn_id, confidence = find_best_match(golfer_name, field)
+            if espn_id:
+                return (name, espn_id, confidence)
 
     except Exception:
-        return (None, None, 0)
+        pass  # Continue to search API fallback
+
+    # Fallback: use search API
+    try:
+        espn_name, espn_id = search_golfer_espn(golfer_name, client)
+        if espn_id:
+            # Search API returns exact match, so use high confidence
+            return (espn_name, espn_id, 100)
+    except Exception:
+        pass
+
+    return (None, None, 0)
 
 
 def match_golfers_enhanced(

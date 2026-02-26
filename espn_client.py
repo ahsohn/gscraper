@@ -67,6 +67,24 @@ class ESPNClient:
         logger.debug(f"Fetching stats for athlete {athlete_id}...")
         return self._request(url, params=params)
 
+    def search_player(self, query: str) -> dict[str, Any] | None:
+        """Search for a player by name.
+
+        Args:
+            query: Player name to search for
+
+        Returns:
+            Search result dict or None if not found
+        """
+        import urllib.parse
+        url = f"{config.SEARCH_URL}?query={urllib.parse.quote(query)}&limit=5"
+        logger.debug(f"Searching for player: {query}")
+        try:
+            return self._request(url)
+        except Exception as e:
+            logger.warning(f"Search failed for '{query}': {e}")
+            return None
+
     def get_current_tournament_field(self) -> list[dict[str, Any]]:
         """Fetch the field (competitors) from the current/most recent tournament.
 

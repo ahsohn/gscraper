@@ -6,6 +6,7 @@ from pathlib import Path
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard"
 STATISTICS_URL = "https://site.api.espn.com/apis/site/v2/sports/golf/pga/statistics"
 PLAYER_STATS_URL = "https://site.web.api.espn.com/apis/common/v3/sports/golf/athletes/{athlete_id}/stats"
+SEARCH_URL = "https://site.api.espn.com/apis/search/v2"
 
 # Season configuration
 CURRENT_SEASON = 2026
