@@ -8,9 +8,10 @@ import click
 import config
 from espn_client import ESPNClient
 from scrapers.schedule import scrape_schedule
-from scrapers.fedex_standings import scrape_fedex_standings, load_player_roster
+from scrapers.fedex_standings import scrape_fedex_standings
 from scrapers.player_matcher import (
-    match_golfers,
+    match_golfers_enhanced,
+    load_all_espn_players,
     read_golfers_csv,
     write_mapping_csv,
     generate_sql_updates,
@@ -136,26 +137,44 @@ def run_all(max_players: int) -> None:
     default="output/golfer_mapping.csv",
     help="Output CSV file path",
 )
-def match_golfers_cmd(input_csv: str, output: str) -> None:
+@click.option(
+    "--no-api-lookup",
+    is_flag=True,
+    help="Skip ESPN API lookup for unmatched golfers (faster, offline)",
+)
+def match_golfers_cmd(input_csv: str, output: str, no_api_lookup: bool) -> None:
     """Match golfers against ESPN player database.
 
     Reads golfer names from INPUT_CSV (columns: golfer_id, name) and
-    fuzzy matches against ESPN FedEx standings data.
+    fuzzy matches against all available ESPN data:
+
+    1. First checks local data (fedex_standings.json + tournament_results/)
+    2. Then queries ESPN API for any unmatched golfers (unless --no-api-lookup)
 
     Examples:
         python main.py match-golfers golfers.csv
-        python main.py match-golfers golfers.csv --output my_mapping.csv
+        python main.py match-golfers golfers.csv --no-api-lookup
     """
     # Load golfers from input CSV
     golfers = read_golfers_csv(input_csv)
     click.echo(f"Loaded {len(golfers)} golfers from {input_csv}")
 
-    # Load ESPN players
-    espn_players = load_player_roster()
-    click.echo(f"Loaded {len(espn_players)} ESPN players")
+    # Load all available ESPN players from local data
+    espn_players = load_all_espn_players()
+    click.echo(f"Loaded {len(espn_players)} ESPN players from local data")
 
-    # Match
-    results = match_golfers(golfers, espn_players)
+    # Match with optional API fallback
+    client = None
+    if not no_api_lookup:
+        click.echo("Will query ESPN API for unmatched golfers...")
+        client = ESPNClient()
+
+    results = match_golfers_enhanced(
+        golfers,
+        espn_players,
+        lookup_unmatched=not no_api_lookup,
+        client=client,
+    )
 
     # Write output
     write_mapping_csv(results, output)
