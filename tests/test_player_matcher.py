@@ -618,11 +618,35 @@ class TestSearchGolferEspn:
 
 
 class TestLookupGolferEspnWithFallback:
-    """Tests for lookup with search API fallback."""
+    """Tests for lookup with search API first, tournament fallback."""
 
-    def test_lookup_uses_tournament_first(self):
-        """Returns match from tournament field when available."""
+    def test_lookup_uses_search_first(self):
+        """Returns match from search API when available."""
         mock_client = MagicMock()
+        mock_client.search_player.return_value = {
+            "results": [{
+                "type": "player",
+                "contents": [{
+                    "uid": "s:1100~a:9478",
+                    "displayName": "Scottie Scheffler",
+                }]
+            }]
+        }
+
+        name, espn_id, confidence = lookup_golfer_espn("Scottie Scheffler", mock_client)
+
+        assert name == "Scottie Scheffler"
+        assert espn_id == "9478"
+        assert confidence == 100
+        # Should not call scoreboard since search found match
+        mock_client.get_scoreboard.assert_not_called()
+
+    def test_lookup_falls_back_to_tournament(self):
+        """Falls back to tournament field when search returns nothing."""
+        mock_client = MagicMock()
+        # Search returns no results
+        mock_client.search_player.return_value = {"results": []}
+        # Tournament field has the player
         mock_client.get_scoreboard.return_value = {
             "events": [{
                 "competitions": [{
@@ -638,37 +662,9 @@ class TestLookupGolferEspnWithFallback:
         assert name == "Scottie Scheffler"
         assert espn_id == "9478"
         assert confidence == 100
-        # Should not call search since tournament field matched
-        mock_client.search_player.assert_not_called()
-
-    def test_lookup_falls_back_to_search(self):
-        """Falls back to search API when not in tournament field."""
-        mock_client = MagicMock()
-        mock_client.get_scoreboard.return_value = {
-            "events": [{
-                "competitions": [{
-                    "competitors": [
-                        {"id": "9478", "athlete": {"displayName": "Scottie Scheffler"}},
-                    ]
-                }]
-            }]
-        }
-        mock_client.search_player.return_value = {
-            "results": [{
-                "type": "player",
-                "contents": [{
-                    "uid": "s:1100~a:462",
-                    "displayName": "Tiger Woods",
-                }]
-            }]
-        }
-
-        name, espn_id, confidence = lookup_golfer_espn("Tiger Woods", mock_client)
-
-        assert name == "Tiger Woods"
-        assert espn_id == "462"
-        assert confidence == 100  # Search API gives high confidence
-        mock_client.search_player.assert_called_once_with("Tiger Woods")
+        # Both should be called - search first, then tournament fallback
+        mock_client.search_player.assert_called_once()
+        mock_client.get_scoreboard.assert_called_once()
 
     def test_lookup_returns_none_when_both_fail(self):
         """Returns None when both tournament and search fail."""

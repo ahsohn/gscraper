@@ -336,10 +336,10 @@ def search_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str |
 
 
 def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str | None, int]:
-    """Look up a golfer in ESPN's current tournament field, with search API fallback.
+    """Look up a golfer using ESPN's search API, with tournament field as backup.
 
-    First tries to find the golfer in the current tournament field. If not found,
-    falls back to ESPN's search API which can find any golfer.
+    Prioritizes the search API for accurate results, falls back to tournament
+    field fuzzy matching if search fails.
 
     Args:
         golfer_name: Name to search for
@@ -352,7 +352,16 @@ def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str |
         from espn_client import ESPNClient
         client = ESPNClient()
 
-    # First, try current tournament field
+    # First, try search API (most accurate)
+    try:
+        espn_name, espn_id = search_golfer_espn(golfer_name, client)
+        if espn_id:
+            # Search API returns exact match, so use high confidence
+            return (espn_name, espn_id, 100)
+    except Exception:
+        pass
+
+    # Fallback: try current tournament field with fuzzy matching
     try:
         scoreboard = client.get_scoreboard()
         events = scoreboard.get("events", [])
@@ -376,15 +385,6 @@ def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str |
             if espn_id:
                 return (name, espn_id, confidence)
 
-    except Exception:
-        pass  # Continue to search API fallback
-
-    # Fallback: use search API
-    try:
-        espn_name, espn_id = search_golfer_espn(golfer_name, client)
-        if espn_id:
-            # Search API returns exact match, so use high confidence
-            return (espn_name, espn_id, 100)
     except Exception:
         pass
 
