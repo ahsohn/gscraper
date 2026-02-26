@@ -8,7 +8,12 @@ import click
 import config
 from espn_client import ESPNClient
 from scrapers.schedule import scrape_schedule
-from scrapers.fedex_standings import scrape_fedex_standings
+from scrapers.fedex_standings import scrape_fedex_standings, load_player_roster
+from scrapers.player_matcher import (
+    match_golfers,
+    read_golfers_csv,
+    write_mapping_csv,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -121,6 +126,45 @@ def run_all(max_players: int) -> None:
     click.echo(f"Created {len(results_count)} tournament result files\n")
 
     click.echo("=== Done ===")
+
+
+@cli.command("match-golfers")
+@click.argument("input_csv", type=click.Path(exists=True))
+@click.option(
+    "--output",
+    default="output/golfer_mapping.csv",
+    help="Output CSV file path",
+)
+def match_golfers_cmd(input_csv: str, output: str) -> None:
+    """Match golfers against ESPN player database.
+
+    Reads golfer names from INPUT_CSV (columns: golfer_id, name) and
+    fuzzy matches against ESPN FedEx standings data.
+
+    Examples:
+        python main.py match-golfers golfers.csv
+        python main.py match-golfers golfers.csv --output my_mapping.csv
+    """
+    # Load golfers from input CSV
+    golfers = read_golfers_csv(input_csv)
+    click.echo(f"Loaded {len(golfers)} golfers from {input_csv}")
+
+    # Load ESPN players
+    espn_players = load_player_roster()
+    click.echo(f"Loaded {len(espn_players)} ESPN players")
+
+    # Match
+    results = match_golfers(golfers, espn_players)
+
+    # Write output
+    write_mapping_csv(results, output)
+    click.echo(f"Wrote mapping to {output}")
+
+    # Summary
+    matches = sum(1 for r in results if r["status"] == "MATCH")
+    reviews = sum(1 for r in results if r["status"] == "REVIEW")
+    no_match = sum(1 for r in results if r["status"] == "NO_MATCH")
+    click.echo(f"\nSummary: {matches} MATCH, {reviews} REVIEW, {no_match} NO_MATCH")
 
 
 if __name__ == "__main__":
