@@ -66,12 +66,15 @@ Match golfers from external databases to ESPN athlete IDs:
 ```bash
 # 1. Export golfers from your database to CSV (golfer_id, name columns)
 
-# 2. Run fuzzy matcher
+# 2. Run fuzzy matcher (checks local data first, then ESPN API for unmatched)
 python main.py match-golfers golfers.csv --output output/golfer_mapping.csv
+
+# Or skip API lookup for faster offline matching:
+python main.py match-golfers golfers.csv --no-api-lookup
 
 # 3. Review and edit output/golfer_mapping.csv
 #    - Verify REVIEW matches
-#    - Manually add ESPN IDs for NO_MATCH rows
+#    - Any remaining NO_MATCH rows need manual ESPN ID lookup
 
 # 4. Generate SQL updates
 python main.py generate-sql output/golfer_mapping.csv --output output/update_golfers.sql
@@ -79,10 +82,15 @@ python main.py generate-sql output/golfer_mapping.csv --output output/update_gol
 # 5. Run the SQL in your database
 ```
 
+**How matching works:**
+1. First checks all local data (fedex_standings.json + tournament_results/*.json)
+2. For any unmatched golfers, queries ESPN's current tournament field API
+3. Returns results with confidence scores
+
 Status values:
 - `MATCH` (>=95 confidence) - High confidence, likely correct
 - `REVIEW` (70-94) - Needs human verification
-- `NO_MATCH` (<70) - No good candidate found
+- `NO_MATCH` (<70) - Not found in local data or ESPN API
 
 ## Output JSON Structure
 
