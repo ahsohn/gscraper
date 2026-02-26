@@ -1,9 +1,12 @@
 """Player matching utilities for ESPN ID mapping."""
 
 import csv
+import json
 from pathlib import Path
 
 from rapidfuzz import fuzz, process
+
+import config
 
 # Cyrillic to ASCII character mappings
 CYRILLIC_TO_ASCII = {
@@ -211,3 +214,159 @@ def generate_sql_updates(results: list[dict]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def load_players_from_tournament_results() -> list[dict]:
+    """Load all unique players from tournament result files.
+
+    Returns:
+        List of player dicts with 'athlete_id' and 'name'
+    """
+    players = {}  # Use dict to dedupe by athlete_id
+
+    results_dir = config.TOURNAMENT_RESULTS_DIR
+    if not results_dir.exists():
+        return []
+
+    for json_file in results_dir.glob("*.json"):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            for result in data.get("results", []):
+                athlete_id = result.get("athlete_id")
+                name = result.get("name")
+                if athlete_id and name and athlete_id not in players:
+                    players[athlete_id] = {
+                        "athlete_id": athlete_id,
+                        "name": name,
+                    }
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    return list(players.values())
+
+
+def load_all_espn_players() -> list[dict]:
+    """Load players from all available local sources.
+
+    Combines:
+    - fedex_standings.json (top 50)
+    - tournament_results/*.json (everyone who scored points)
+
+    Returns:
+        Deduplicated list of player dicts with 'athlete_id' and 'name'
+    """
+    from scrapers.fedex_standings import load_player_roster
+
+    players = {}  # Dedupe by athlete_id
+
+    # Load from fedex standings
+    try:
+        for player in load_player_roster():
+            aid = player.get("athlete_id")
+            if aid:
+                players[aid] = {"athlete_id": aid, "name": player.get("name", "")}
+    except Exception:
+        pass
+
+    # Load from tournament results
+    for player in load_players_from_tournament_results():
+        aid = player.get("athlete_id")
+        if aid and aid not in players:
+            players[aid] = player
+
+    return list(players.values())
+
+
+def lookup_golfer_espn(golfer_name: str, client=None) -> tuple[str | None, str | None, int]:
+    """Look up a golfer in ESPN's current tournament field.
+
+    Args:
+        golfer_name: Name to search for
+        client: Optional ESPNClient instance
+
+    Returns:
+        Tuple of (espn_name, espn_id, confidence) or (None, None, 0) if not found
+    """
+    if client is None:
+        from espn_client import ESPNClient
+        client = ESPNClient()
+
+    try:
+        scoreboard = client.get_scoreboard()
+        events = scoreboard.get("events", [])
+        if not events:
+            return (None, None, 0)
+
+        # Build field from current tournament
+        field = []
+        current_event = events[0]
+        competitions = current_event.get("competitions", [])
+        if competitions:
+            competitors = competitions[0].get("competitors", [])
+            for competitor in competitors:
+                athlete = competitor.get("athlete", {})
+                field.append({
+                    "athlete_id": str(competitor.get("id", "")),
+                    "name": athlete.get("displayName", ""),
+                })
+
+        # Use existing fuzzy match
+        return find_best_match(golfer_name, field)
+
+    except Exception:
+        return (None, None, 0)
+
+
+def match_golfers_enhanced(
+    golfers: list[dict],
+    espn_players: list[dict] | None = None,
+    lookup_unmatched: bool = True,
+    client=None,
+) -> list[dict]:
+    """Match golfers with local data first, then ESPN API for unmatched.
+
+    Args:
+        golfers: List of dicts with 'golfer_id' and 'name'
+        espn_players: Optional pre-loaded ESPN players (uses load_all_espn_players if None)
+        lookup_unmatched: Whether to query ESPN API for NO_MATCH results
+        client: Optional ESPNClient for API lookups
+
+    Returns:
+        List of match result dicts
+    """
+    # Load comprehensive local player list if not provided
+    if espn_players is None:
+        espn_players = load_all_espn_players()
+
+    # First pass: match against local data
+    results = match_golfers(golfers, espn_players)
+
+    if not lookup_unmatched:
+        return results
+
+    # Second pass: ESPN API lookup for unmatched
+    unmatched_indices = [
+        i for i, r in enumerate(results) if r["status"] == "NO_MATCH"
+    ]
+
+    if not unmatched_indices:
+        return results
+
+    # Initialize client once for all lookups
+    if client is None:
+        from espn_client import ESPNClient
+        client = ESPNClient()
+
+    for idx in unmatched_indices:
+        golfer_name = results[idx]["current_name"]
+        espn_name, espn_id, confidence = lookup_golfer_espn(golfer_name, client)
+
+        if espn_id:
+            results[idx]["espn_name"] = espn_name
+            results[idx]["espn_id"] = espn_id
+            results[idx]["confidence"] = confidence
+            results[idx]["status"] = get_status(confidence)
+
+    return results
