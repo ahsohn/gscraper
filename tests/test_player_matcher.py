@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 import pytest
-from scrapers.player_matcher import normalize_name, find_best_match, match_golfers, read_golfers_csv, write_mapping_csv
+from scrapers.player_matcher import normalize_name, find_best_match, match_golfers, read_golfers_csv, write_mapping_csv, generate_sql_updates
 
 
 class TestNormalizeName:
@@ -156,3 +156,65 @@ class TestCSVIO:
         content = output_file.read_text()
         assert "golfer_id,current_name,espn_name,espn_id,confidence,status" in content
         assert "1,Test Player,Test Player,12345,100,MATCH" in content
+
+
+class TestGenerateSQL:
+    """Tests for SQL generation."""
+
+    def test_generates_espn_id_only(self):
+        results = [{
+            "golfer_id": 1,
+            "current_name": "Scottie Scheffler",
+            "espn_name": "Scottie Scheffler",
+            "espn_id": "9478",
+            "confidence": 100,
+            "status": "MATCH",
+        }]
+
+        sql = generate_sql_updates(results)
+
+        assert "UPDATE golfers SET espn_id = '9478' WHERE golfer_id = 1;" in sql
+        assert "SET name" not in sql  # Name unchanged
+
+    def test_generates_name_fix_and_id(self):
+        results = [{
+            "golfer_id": 2,
+            "current_name": "Hidеki Matsuyama",  # Cyrillic е
+            "espn_name": "Hideki Matsuyama",
+            "espn_id": "5860",
+            "confidence": 95,
+            "status": "MATCH",
+        }]
+
+        sql = generate_sql_updates(results)
+
+        assert "SET name = 'Hideki Matsuyama', espn_id = '5860'" in sql
+
+    def test_skips_empty_espn_id(self):
+        results = [{
+            "golfer_id": 3,
+            "current_name": "Unknown Player",
+            "espn_name": "",
+            "espn_id": "",
+            "confidence": 0,
+            "status": "NO_MATCH",
+        }]
+
+        sql = generate_sql_updates(results)
+
+        assert "Unknown Player" not in sql
+        assert "golfer_id = 3" not in sql
+
+    def test_escapes_single_quotes(self):
+        results = [{
+            "golfer_id": 4,
+            "current_name": "Tom OBrien",  # Different from espn_name to trigger name update
+            "espn_name": "Tom O'Brien",
+            "espn_id": "12345",
+            "confidence": 100,
+            "status": "MATCH",
+        }]
+
+        sql = generate_sql_updates(results)
+
+        assert "O''Brien" in sql  # Escaped quote
