@@ -59,6 +59,31 @@ python main.py all --max-players N         # Run all scrapers
 python main.py --help                      # Show all commands
 ```
 
+## Player ID Matching
+
+Match golfers from external databases to ESPN athlete IDs:
+
+```bash
+# 1. Export golfers from your database to CSV (golfer_id, name columns)
+
+# 2. Run fuzzy matcher
+python main.py match-golfers golfers.csv --output output/golfer_mapping.csv
+
+# 3. Review and edit output/golfer_mapping.csv
+#    - Verify REVIEW matches
+#    - Manually add ESPN IDs for NO_MATCH rows
+
+# 4. Generate SQL updates
+python main.py generate-sql output/golfer_mapping.csv --output output/update_golfers.sql
+
+# 5. Run the SQL in your database
+```
+
+Status values:
+- `MATCH` (>=95 confidence) - High confidence, likely correct
+- `REVIEW` (70-94) - Needs human verification
+- `NO_MATCH` (<70) - No good candidate found
+
 ## Output JSON Structure
 
 ### tournament_schedule.json
@@ -98,7 +123,7 @@ python main.py --help                      # Show all commands
 ## Technical Stack
 
 - Python 3.10+
-- Dependencies: `requests`, `click` (see requirements.txt)
+- Dependencies: `requests`, `click`, `rapidfuzz`, `pytest` (see requirements.txt)
 - Logging via Python `logging` module
 
 ## Next Steps
