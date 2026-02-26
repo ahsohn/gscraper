@@ -80,3 +80,46 @@ def find_best_match(
 
     player = player_lookup[matched_norm]
     return (player["name"], player["athlete_id"], score)
+
+
+def get_status(confidence: int) -> str:
+    """Determine match status from confidence score."""
+    if confidence >= 95:
+        return "MATCH"
+    elif confidence >= 70:
+        return "REVIEW"
+    else:
+        return "NO_MATCH"
+
+
+def match_golfers(
+    golfers: list[dict],
+    espn_players: list[dict]
+) -> list[dict]:
+    """Match a list of golfers against ESPN players.
+
+    Args:
+        golfers: List of dicts with 'golfer_id' and 'name'
+        espn_players: List of ESPN player dicts
+
+    Returns:
+        List of match result dicts
+    """
+    results = []
+
+    for golfer in golfers:
+        espn_name, espn_id, confidence = find_best_match(
+            golfer["name"],
+            espn_players
+        )
+
+        results.append({
+            "golfer_id": golfer["golfer_id"],
+            "current_name": golfer["name"],
+            "espn_name": espn_name or "",
+            "espn_id": espn_id or "",
+            "confidence": confidence,
+            "status": get_status(confidence),
+        })
+
+    return results

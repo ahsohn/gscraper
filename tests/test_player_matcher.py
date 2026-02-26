@@ -1,7 +1,7 @@
 """Tests for player_matcher module."""
 
 import pytest
-from scrapers.player_matcher import normalize_name, find_best_match
+from scrapers.player_matcher import normalize_name, find_best_match, match_golfers
 
 
 class TestNormalizeName:
@@ -68,3 +68,46 @@ class TestFindBestMatch:
         name, espn_id, confidence = find_best_match("Kim Si Woo", espn_players)
         assert espn_id == "7081"
         assert confidence >= 70
+
+
+class TestMatchGolfers:
+    """Tests for batch matching."""
+
+    @pytest.fixture
+    def espn_players(self):
+        return [
+            {"athlete_id": "9478", "name": "Scottie Scheffler"},
+            {"athlete_id": "5860", "name": "Hideki Matsuyama"},
+            {"athlete_id": "8961", "name": "Sepp Straka"},
+        ]
+
+    @pytest.fixture
+    def golfers(self):
+        return [
+            {"golfer_id": 1, "name": "Scottie Scheffler"},
+            {"golfer_id": 2, "name": "Hidеki Matsuyama"},  # Cyrillic е
+            {"golfer_id": 3, "name": "Unknown Player"},
+        ]
+
+    def test_returns_all_golfers(self, golfers, espn_players):
+        results = match_golfers(golfers, espn_players)
+        assert len(results) == 3
+
+    def test_match_status(self, golfers, espn_players):
+        results = match_golfers(golfers, espn_players)
+        # Exact match
+        assert results[0]["status"] == "MATCH"
+        # Cyrillic match (high confidence)
+        assert results[1]["status"] in ["MATCH", "REVIEW"]
+        # No match
+        assert results[2]["status"] == "NO_MATCH"
+
+    def test_preserves_golfer_id(self, golfers, espn_players):
+        results = match_golfers(golfers, espn_players)
+        assert results[0]["golfer_id"] == 1
+        assert results[1]["golfer_id"] == 2
+
+    def test_includes_current_name(self, golfers, espn_players):
+        results = match_golfers(golfers, espn_players)
+        assert results[0]["current_name"] == "Scottie Scheffler"
+        assert "Hidеki" in results[1]["current_name"]  # Preserves original
